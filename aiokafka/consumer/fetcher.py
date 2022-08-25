@@ -404,8 +404,9 @@ class Fetcher:
         # SubscriptionState will pass Coordination critical errors to those
         # waiters directly
         self._subscriptions.register_fetch_waiters(self._fetch_waiters)
-
-        if client.api_version >= (0, 11):
+        if client.api_version >= (2, 5, 0): # bumped up to indicate ZStandard capability
+            req_version = 10
+        elif client.api_version >= (0, 11):
             req_version = 4
         elif client.api_version >= (0, 10, 1):
             req_version = 3
@@ -617,7 +618,9 @@ class Fetcher:
             for tp, position in partition_data:
                 by_topics[tp.topic].append((
                     tp.partition,
+                    -1, # current_leader_epoch
                     position,
+                    -1, # log_start_offset
                     self._max_partition_fetch_bytes))
             klass = self._fetch_request_class
             if klass.API_VERSION > 3:
@@ -627,7 +630,11 @@ class Fetcher:
                     self._fetch_min_bytes,
                     self._fetch_max_bytes,
                     self._isolation_level,
-                    list(by_topics.items()))
+                    -1, # session_id
+                    -1, # session_epoch
+                    list(by_topics.items()),
+                    [] # forgotten_topics_data
+                )
             elif klass.API_VERSION == 3:
                 req = klass(
                     -1,  # replica_id
@@ -675,7 +682,7 @@ class Fetcher:
 
         fetch_offsets = {}
         for topic, partitions in request.topics:
-            for partition, offset, _ in partitions:
+            for partition, current_leader_epoch, offset, _,__ in partitions:
                 fetch_offsets[TopicPartition(topic, partition)] = offset
 
         now_ms = int(1000 * time.time())
